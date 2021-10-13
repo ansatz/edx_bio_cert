@@ -2,19 +2,22 @@ docker-run:
 
 	#docker run -d -p 8787:8787 -v $(pwd):/rstudio --name rockr rocker/hadleyverse:v1
 	# got DESeq2 on tidyverse hadleyverse is f-ed
-	docker run -d -p 8787:8787 -v $(pwd):/rstudio --name rockr rocker/tidyverse:v2
+	#docker run -d -p 8787:8787 -v $(pwd):/rstudio --name rockr rocker/tidyverse:v2 #added sva, Org.hg.eg.db, 
+	#docker run -d -p 8787:8787 -v $(pwd):/rstudio --name rockr rocker/tidyverse:v3 
+	#docker run -d -p 8787:8787 -v $(pwd):/rstudio --name rockr rocker/tidyverse:v3b #version that gen html
+	docker run -d -p 8787:8787 -v $(pwd):/rstudio --name rockr rocker/tidyverse:v3c #pasilla DEXSeq
 
 docker-commit:
 
 	#echo docker commit rocker/hadleyverse:v2
-	echo docker commit rocker/tidyverse:v3
+	#echo docker commit rockr rocker/tidyverse:v3
+	echo docker commit rockr rocker/tidyverse:v4
 
 git-push:
 	# git remote add origin https://github.com/ansatz/edx_bio_cert.git
 	# git remote -v
 	#git branch -M main
 	git push -u origin main
-
 
 
 cli:

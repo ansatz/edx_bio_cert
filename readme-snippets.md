@@ -1,3 +1,10 @@
+# reading
+
+- exon/isoform
+filtering comparison : https://genomebiology.biomedcentral.com/articles/10.1186/s13059-015-0862-3
+dexseq : https://genome.cshlp.org/content/22/10/2008.full
+
+
 remotes::install_version("survival","3.1.6")
 install_packages("HMISC") worked
 

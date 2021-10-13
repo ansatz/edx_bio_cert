@@ -1,0 +1,87 @@
+---
+title: "6casestudies_exon_isoform.Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## exon usage
+
+```{r dex}
+library("pasilla")
+inDir <- system.file("extdata", package="pasilla", mustWork=TRUE)
+countFiles <- list.files(inDir, pattern="fb.txt$", full.names=TRUE)    
+flattenedFile <- list.files(inDir, pattern="gff$", full.names=TRUE) 
+
+sampleTable <- data.frame(
+  row.names = c("treated1", "treated2", "treated3",
+                "untreated1", "untreated2", "untreated3", "untreated4"), 
+  condition = c("knockdown", "knockdown", "knockdown", 
+                "control", "control", "control", "control"))                 
+
+library("DEXSeq")  
+dxd <- DEXSeqDataSetFromHTSeq(countFiles, sampleData=sampleTable, 
+                              design= ~ sample + exon + condition:exon, 
+                              flattenedfile=flattenedFile)
+```
+
+```{r subset}
+rmean <- rowMeans(counts(dxd)) 
+dxd2L <- dxd[seqnames(rowRanges(dxd)) == "chr2L" & rmean > 10,] 
+dxd2L <- dxd2L[1:1000,] 
+
+```
+
+```{r }
+#http://genomicsclass.github.io/book/pages/rnaseq_exon_usage.html
+dxd2L = estimateSizeFactors( dxd2L )
+dxd2L = estimateDispersions( dxd2L )
+dxd2L = testForDEU( dxd2L )
+dxd2L = estimateExonFoldChanges( dxd2L, fitExpToVar="condition")
+dxr = DEXSeqResults( dxd2L )
+plotMA( dxr, cex=0.8 )
+
+```
+
+
+```{r}
+#min padj
+rownames(dxr)[which.min(dxr$padj) ]
+
+```
+
+```{r}
+plotDEXSeq( dxr, "FBgn0000256", norCounts=TRUE, displayTranscripts=TRUE, legend=TRUE, cex.axis=1.2, cex=1.1, lwd=2 )
+
+```
+###
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+## refs
+The DEXSeq method was published in Genome Research in 2012:
+
+http://genome.cshlp.org/content/22/10/2008.full External link
+
+Since then, a number of comparison papers have compared the exon-centric approach to an isoform-centric approach. A comparison paper which is worth exploring is this one, published in Genome Biology in 2015:
+
+Isoform prefiltering improves performance of count-based methods for analysis of differential transcript usage, Charlotte Soneson, Katarina L. Matthes, Malgorzata Nowicka, Charity W. Law and Mark D. Robinson
+
+http://genomebiology.biomedcentral.com/articles/10.1186/s13059-015-0862-3 External link
+
+The authors find that "[exon] count-based methods generally perform well in the detection of differential transcript usage", although DEXSeq's false discovery rate can be improved by filtering out isoforms from the annotation file which are very lowly or not expressed in the samples (see Figure 6).
+
+
+```{r}
+sessionInfo()
+```
