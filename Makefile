@@ -9,6 +9,14 @@ docker-commit:
 	#echo docker commit rocker/hadleyverse:v2
 	echo docker commit rocker/tidyverse:v3
 
+git-push:
+	# git remote add origin https://github.com/ansatz/edx_bio_cert.git
+	# git remote -v
+	#git branch -M main
+	git push -u origin main
+
+
+
 cli:
 	# open container
 	docker exec -it rockr /bin/bash
