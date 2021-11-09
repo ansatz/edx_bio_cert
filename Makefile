@@ -1,6 +1,5 @@
-git-push:
-        # git remote add origin https://github.com/ansatz/edx_b
-io_cert.git
+gitpush_local-to-github-repo:
+        # https://github.com/ansatz/edx_bio_cert.git
         git push -u origin main
 
 sync-linode-to-acer:
