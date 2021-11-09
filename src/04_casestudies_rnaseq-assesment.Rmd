@@ -1,0 +1,135 @@
+---
+title: "rnaseq-assesment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## assesment
+
+```{r assessment results=FALSE, warning=FALSE}
+#BiocManager::install("parathyroidSE",force=TRUE)
+library(parathyroidSE)
+data(parathyroidGenesSE)
+pth <- parathyroidGenesSE    # abbreviate
+pth <- pth[, pth$time == "48h" & pth$treatment != "OHT"]    # remove 24h and OHT samples
+pth
+head(pth)
+```
+
+
+```{r}
+library(DESeq2)
+dds <- DESeqDataSet(pth, design = ~ patient + treatment)
+dds_coll <- collapseReplicates(dds, groupby = dds$sample, run = dds$run)
+```
+
+```{r}
+#Question 7: Size factors
+#Calculate the size factors for samples in dds_coll.
+
+#What is the size factor for the first sample, "SRS308866"?
+dds_coll <- estimateSizeFactors(dds_coll)
+head(dds_coll)
+sizeFactors(dds_coll)
+
+#which sample largest size factor?
+which.max(sizeFactors(dds_coll))
+names(sizeFactors(dds_coll))[which.max(sizeFactors(dds_coll))]
+```
+
+```{r}
+#Question 8: PCA plot
+
+#Use rlog() to perform a regularized log transformation on dds_coll, then make a PCA plot of the transformed data using plotPCA(). The samples should cluster by patient.
+
+rld <- rlog(dds, blind=FALSE) #use design to estimate global dispersion
+head(rld)
+#plot(assay(rld)[,1:2], cex=.1)
+plotPCA(rld, intgroup="patient")
+
+#What percent of the variance is represented by the first principal component (PC1)?
+#Submit your answer as an integer.
+
+
+
+```
+
+```{r}
+#Use DESeq() to perform differential expression analysis on dds_coll and use summary() on the results to determine the number of differentially expressed genes.
+dds_coll <- DESeq(dds_coll)
+res <- results(dds_coll)
+#head(res)
+```
+
+```{r}
+summary(res)
+#How many genes are upregulated (LFC > 0) at a FDR of 0.1?
+
+```   
+
+```{r}
+#Question 10: Top differentially expressed gene
+#What is the ENSEMBL ID of the gene with the lowest adjusted p-value?
+#Report the entire ID starting with "ENSG".
+res[which.min(res$padj),] #ENSG00000044574
+#res[order(res$padj),]
+
+#What is the log2 fold change in expression of this gene in DPN-treated samples versus controls?
+#0.489909
+```
+
+
+```{r}
+#Question 11: MA plot
+#Create an MA plot of the genes in the dataset. (You can also answer the questions or verify your responses by manually filtering the results table.)
+# check answers manually
+#There are no significantly differentially expressed genes with a log fold change larger than 2.
+#There are no significantly differentially expressed genes with log fold change less than -2.
+#There are no significantly differentially expressed genes with mean normalized counts less than 1e+02.
+#There are no significantly differentially expressed genes with mean normalized counts greater than 1e+05.
+#res[res$padj < 0.1 & !is.na(res$padj) & res$log2FoldChange > 2,]
+#res[res$padj < 0.1 & !is.na(res$padj) & res$log2FoldChange < -2,]
+#res[res$padj < 0.1 & !is.na(res$padj) & res$baseMean < 1e2,]
+#res[res$padj < 0.1 & !is.na(res$padj) & res$baseMean > 1e5,]
+#library(rafalib)
+DESeq2::plotMA(res, ylim=c(-4,4))
+```
+
+  
+```{r}
+res.thr <- results(dds_coll, lfcThreshold=1) #more than 2 or less than 1/2
+plotMA(res.thr, ylim=c(-4,4))
+```
+
+
+```{r}
+# Use plotCounts() and ggplot2 to visualize counts for the gene with the lowest adjusted p-value. Your x-axis should be the treatment type, your y-axis should be the count, and the point shape should be the patient.
+#colData(dds_coll)
+library(ggplot2)
+data <- DESeq2::plotCounts(dds_coll, gene=which.min(res$padj), intgroup=c("treatment","patient"), returnData=TRUE)
+#head(data)
+# Which of these is the correct plot for the gene with the lowest adjusted p-value?
+#ggplot(data, aes(x=treatment, y=count, col=patient, group=patient)) +
+#  geom_point() + geom_line() + scale_y_log10() 
+ggplot(data=data, aes(x=treatment, y=count, col=patient)) +
+  geom_point(position=position_jitter(width=.1,height=0)) +
+  scale_y_log10()
+```
+
+```{r}
+library(KEGGREST)
+```
+
+
+```{r getl,echo=FALSE,results="hide"}
+suppressWarnings({
+suppressPackageStartupMessages({
+library(ERBS)
+library(GenomeInfoDb)
+library(ggbio)
+})
+})
+```

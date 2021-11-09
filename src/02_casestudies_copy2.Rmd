@@ -1,0 +1,941 @@
+---
+#title: "PH525.6x"
+#author: Gobind Singh
+#date: "`r Sys.Date()`"
+output:
+  html_document:
+    #code_folding: show
+    pandoc_args: [
+    "+RTS", "-K128m",
+    "-RTS"
+    ]
+    theme: spacelab
+    highlight: haddock
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+---
+
+### NGS
+NGS technology provides large sequence depth coverage.  In sequencing projects, it helps 'close the gap' of unsequenced regions, opens the door for cancer studies requiring large coverage of dipoloid genome, and allows sequencing across multiple organisms in metagenomic studies.  The large depth overcomes latent biases in target sequences.  
+
+Large depth also leads to variance in read.  For example, in NGS applications of population variant analysis, low sample size leads to low number of detected variants; however the read variance of the small sample will be large.  Conversely, with large sample size, a decrease in read variance will not capture the greater number of variants of a larger sample.
+
+Techniques to balance these issues are important..
+
+### RNASeq
+<a href="https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&lastVirtModeType=default&lastVirtModeExtraState=&virtModeType=default&virtMode=0&nonVirtPosition=&position=chr6%3A52657426%2D52669912&hgsid=645641799_vfrXt93g5PGa6dMsDWkLjM0uBt19"><img src=/rstudio/ucsc_gsat.png width="650"></a>
+
+Gene are not well defined: a single gene can have multiple isoform transcripts; there can also be different version of the same gene with multiple isoforms.  
+
+Spliced junctions are not found in the genome; RNA transcripts contain only exons, with a spliced start-junction found in one exon and the end-junction in another.
+
+<br>
+
+#### {.tabset}
+
+##### Notes: {.hidden .active}
+""
+
+---
+
+
+##### 1. Transcriptome 
+  - RNA -> cDNA:
+  - Rna transcripts only contains coding exons (non-coding introns spliced out). 
+  - Splice junctions not in genome (start-junction in one exon, end-junction in another exon)
+
+---
+
+##### 2. Gene Definition 
+  - Gene not well defined 
+  - 1:$\infty$ A single gene can have multiple transcripts.
+  - $\infty$:$\infty$ Multiple genes with multiple exons(sets). <br>
+   (ie 2 diff versions each with diff exons)
+  - Same gene expression levels can have different transcript levels (counts).
+  - Denovo methods try to determine exons without reference. (Trinity Oases, Cufflinks, Scripture)
+    - [Genome Browser](https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&lastVirtModeType=default&lastVirtModeExtraState=&virtModeType=default&virtMode=0&nonVirtPosition=&position=chr6%3A52657426%2D52669912&hgsid=645641799_vfrXt93g5PGa6dMsDWkLjM0uBt19) <br>
+
+---
+
+<!--<iframe id="frame" src="https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&lastVirtModeType=default&lastVirtModeExtraState=&virtModeType=default&virtMode=0&nonVirtPosition=&position=chr6%3A52657426%2D52669912&hgsid=645641799_vfrXt93g5PGa6dMsDWkLjM0uBt19" frameborder="0" allowfullscreen width="800px" height="500px"></iframe>-->
+
+
+#### {.tabset}
+
+##### Questions: {.hidden .active}
+""
+
+#####  Gene model Q1
+According to the UCSC Genes track (it will be on top if you have the default arrangement), how many transcripts does RIT1 have? Note that the RefSeq Genes track below is a separate annotation of the same gene.
+
+- 3 transcripts shown in the UCSC Genes track 
+- have different first and second exons (the thick part of the line)
+- first exons are on the right side because this gene is on the minus strand (it is transcribed from the right side to the left side) 
+- We know the gene is on the minus strand, because the arrows in the thin part of the gene (the introns) point to the left.
+
+#####  Gene model Q2 
+According to UCSC Genes track, how many exons does the top transcript of RIT1 (uc031pqc.1) have?
+
+- 6, thick lines are exons
+
+##### Gene model Q3
+Look up a nearby gene, CCT3. How many transcripts does this gene have, according to the UCSC Genes track?
+
+- 5
+- <img src=/rstudio/cct3-genebrowser.png>
+
+---
+
+### Data Generation and Counts
+Read sequences are measured as counts, and follow a Poisson or Negative Binomial distribution. 
+
+#### {.tabset}
+
+##### Notes: {.hidden .active}
+""
+
+---
+
+#####  Fragments, reads
+- <img src=/rstudio/fragment_reads.png>
+
+---
+
+#####  expression, read counts 
+- <img src=/rstudio/p_transcript.png>
+
+---
+
+##### lottery
+- law of small numbers
+- <img src=/rstudio/poisson.png>
+
+---
+
+
+##### rsem watl
+
+- The differences between the lengths of a gene's transcripts are typically not this extreme. But it is important to remember that changes in the abundance of each transcript will have an effect on the total count of reads from a gene, when the transcripts have different lengths, as we saw above.
+
+- We will see in a video in the next subsection that the RSEM software, which quantifies transcript abundance, will estimate for each gene the weighted average transcript length, weighting by the estimate of percent expression for each transcript. This amount, along with changes in total gene expression and sequencing depth, will tell us how much the total count of reads for a gene might change across samples. If there are no changes in the percent expression of the transcripts for a gene, then the average transcript length will be equal across samples.
+
+---
+
+##### mle
+```{r}
+w=1000
+lengths = c(100,200,300,100,100)
+mat = cbind(c(1,1,0,1,0),c(1,1,1,1,1),c(0,1,1,0,1))
+#counts = c(125,350,300,125,100)
+counts = c(60,320,420,60,140)
+theta.hat = c(1, 2, 3) / 10000
+#mat %*% theta.hat * lengths * w
+LHS = counts/(lengths * w)
+lm.fit(mat, LHS)$coefficients
+```
+
+---
+
+##### Transcript Building
+- 1. without reference (trinity, velvet) sam/bam
+  - only have reads 
+  - reads come from different exons and junctions(multi-exons)
+  
+- 2. with ref (cufflinks, scripture, tophat) fastq
+  - given position of exons, map reads to genome
+  - take into account junction reads might be split between between two distant locations of genome
+  
+---
+
+### Alignment
+
+#### {.tabset}
+
+##### Notes: {.hidden .active}
+""
+
+##### 1. FASTQ
+
+Above, we saw two reads of a paired-end fragment both aligning within an exon of a human gene. For organisms with double stranded DNA, genes are annotated to either the + or - strand of the reference genome. For example, DHX38 is annotated to the + strand.
+
+RNA-sequencing can be performed using either a strand-specific or non-specific protocol. When a strand-specific protocol is used, sequenced fragments are only observed from the same strand as the gene. For a gene annotated to the + strand of the reference genome, this means that we will only observe paired alignments to the + strand. This may look like:
+
++ strand: 5' --  [1st read, + strand] ... [2nd read, - strand]  -- 3'
++ strand: 5' --  [2nd read, + strand] ... [1st read, - strand]  -- 3'  
+
+Naturally, when using a strand-specific protocol, each read includes additional information (strandedness) and will lead to improved alignment and analysis. However, many experiments, including the one we are examining are not strand-specific. This means that, for a gene on the + strand, we may (and will) observe, in addition to the above two kinds of paired-end fragments, two more which align to the - strand of the reference genome:
+
+- strand: 5' --  [1st read, - strand] ... [2nd read, + strand]  -- 3'
+- strand: 5' --  [2nd read, - strand] ... [1st read, + strand]  -- 3'
+
+
+##### 2. FastQC
+Read this excerpt from the FASTQC manual External link comment about Duplicate Sequences External link in RNA-seq:
+
+-    "In RNA-Seq libraries sequences from different transcripts will be present at wildly different levels in the starting population. In order to be able to observe lowly expressed transcripts it is therefore common to greatly over-sequence high expressed transcripts, and this will potentially create large set of duplicates. This will result in high overall duplication in this test, and will often produce peaks in the higher duplication bins. This duplication will come from physically connected regions, and an examination of the distribution of duplicates in a specific genomic region will allow the distinction between over-sequencing and general technical duplication, but these distinctions are not possible from raw fastq files. A similar situation can arise in highly enriched ChIP-Seq libraries although the duplication there is less pronounced. Finally, if you have a library where the sequence start points are constrained (a library constructed around restriction sites for example, or an unfragmented small RNA library) then the constrained start sites will generate huge dupliction levels which should not be treated as a problem, nor removed by deduplication. In these types of library you should consider using a system such as random barcoding to allow the distinction of technical and biological duplicates."
+
+
+-    Adapter trimming - adapters which are used in the sequencing can sometimes show up in the read sequence, because these adapter sequences are non-genomic, they will therefore cause problems with read alignment. A number of software packages can be used to find and trim away adapters in FASTQ files, see for example Scythe External link or FASTX-Toolkit External link.
+
+-    Quality trimming - the 3' end of reads often has lower quality, and some software offers to trim away sequence which would likely interfere with read alignment (given that there is enough remaining 5' sequence for unique alignments). The trade-off between quality trimming vs other methods of error correction is likely specific to the characteristics on individual datasets. See FASTX-Toolkit External link.
+
+-    Length adjustment - when the length of paired-end fragments is often less than 2 * read length, there can be a benefit from combining overlapping pairs into a single long read. See the description for: FLASH External link.
+
+---
+
+##### 3. STAR
+Fast aligner for RNASeq data, high sensitivity because GTF file gives location of exon-exon junctions and introns.  Ref sequence (FASTA), from NCBI or Ensembl.
+- genome index
+- align reads 
+
+---
+
+##### 4. SAM
+Aligned reads stored in SAM/BAM file format.
+FASTQ paired reads are sequenced and recorded on opposite strands.
+SAM the reads are aligned to one strand; one pair is therefore reverse complementary.   first FASTQ file starts with "TCTCAA...", while the second alignment in the SAM file above ends with "...TTGAGA" 
+
+---
+
+##### 5. IGV
+zoom : View > Preferences > Alignments > Visibility range threshold
+visualize BAM file (req index file as well) : [Tracks] -> LocalFile
+webapp 
+Sashimi plots visualize splice junctions from aligned RNA-seq data and a gene annotation track. IGV displays the Sashimi plot in a separate window and allows for more manipulations of the plots than the junctions track. 
+
+---
+
+##### 6. rsem
+
+---
+
+#### {.tabset}
+
+##### Questions: {.hidden .active}
+""
+
+#####  fastqc Q1
+Which position in the sequenced reads has the lowest 10% quality score?
+9
+<img src=/rstudio/qualityscoresfq.png>
+
+#####  fastqc Q2 
+What base is most common in the first position of the read?
+T perbase sequence content
+
+##### fastqc Q3
+The sequence GGAAA spikes at position 10, what is the observed / expected value at this position for GGAAA?
+5.1476827
+kmer content has obs/exp values for max position and overall
+
+---
+
+
+
+### Normalization
+Read counts at the gene-level are ignored if overlap 2 gene features.
+
+Apply transformations of count data to stabilize the variance so can calculate distances, for example.
+
+Note that, on the un-transformed scale, the high count genes have high variance. That is, in the following scatter plot, the points start out in a tight cone and then fan out toward the top right. This is a general property of counts generated from sampling processes, that the variance typically increases with the expected value. We will explore different scaling and transformations options below.
+
+#### {.tabset}
+
+##### Notes: {.hidden .active}
+""
+
+#####  overlaps
+mode equals union
+<img src=/rstudio/modeunion.png>
+Rsamtools : summarizeOverlaps
+pair-end 
+unstranded str-specific count only concodrdant str ignore.strand=False
+
+##### R
+TxDB(sqllite db) object : GRange , SummarizeOverlaps assay(se), featureCounts fc$counts
+
+```{r setup, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+#biocondutor object stores in object the 3 tables expr, annotate, samples 
+#class(sampleInfo)
+#exprs(population)
+#pData()
+library(Biobase)
+library(genefilter)
+
+#install gse5859subset
+library(devtools)
+#install_github("genomicsclass/GSE5859Subset")
+library(GSE5859Subset)
+data(GSE5859Subset)
+library(rafalib)
+```
+
+
+```{r echo=FALSE, results='hide'}
+
+#source("http://bioconductor.org/biocLite.R")
+#biocLite("TxDb.Dmelanogaster.UCSC.dm3.ensGene")
+#biocLite("GenomicFeatures")
+#biocLite("Rsubread")
+#biocLite("pasillaBamSubset")
+#biocVersion()
+#biocLite("BSgenome.Hsapiens.UCSC.hg19")
+
+```
+
+
+
+```{r}
+#library(airway)
+library(pasillaBamSubset)
+
+bam.file <- untreated3_chr4()
+library(Rsamtools)
+bf <- BamFile(bam.file)
+
+library(TxDb.Dmelanogaster.UCSC.dm3.ensGene)
+txdb <- TxDb.Dmelanogaster.UCSC.dm3.ensGene
+
+#exons.by.gene 
+ebg <- exonsBy(txdb, by="gene")
+head(ebg)
+#seqnames(ebg[1])
+
+```
+
+
+##### References
+- [RMD_genelevel](http://genomicsclass.github.io/book/pages/rnaseq_gene_level.html)
+
+--- 
+ 
+#### {.tabset}
+
+##### Questions: {.hidden .active}
+""
+
+##### Count Matrix Q1
+What chromosome is the first gene in ebg annotated to? Enter the name of the chromosome exactly as it is shown in R, including all prefixes and suffixes.
+
+```{r}
+library(pasillaBamSubset)
+bam.file <- untreated3_chr4()
+library(Rsamtools)
+bf <- BamFile(bam.file)
+
+library(TxDb.Dmelanogaster.UCSC.dm3.ensGene)
+txdb <- TxDb.Dmelanogaster.UCSC.dm3.ensGene
+
+#exons.by.gene 
+ebg <- exonsBy(txdb, by="gene")
+#head(ebg)
+seqnames(ebg[1])
+
+```
+
+
+##### Count Matrix Q2
+Count the fragments in the genes in ebg.sub using summarizeOverlaps() from the GenomicAlignments package and with settings:
+
+
+Leave the fragments= argument to its default value (fragments=FALSE).
+How many fragments overlap the first gene, FBgn0002521?
+192
+```{r echo=TRUE, results='hide', message=FALSE, warning=FALSE}
+library(Rsubread)
+#fc <- featureCounts(bf, annot.ext=gtf.file,
+#                    isGTFAnnotationFile=TRUE, 
+#                    isPaired=TRUE)
+library(GenomicAlignments)
+
+```
+
+```{r}
+?summarizeOverlaps
+chr4.idx <- all(seqnames(ebg) == "chr4")
+ebg.sub <- ebg[chr4.idx]
+#ignore.strand=TRUE    # experiment was not strand-specific
+#singleEnd=FALSE    # the experiment is paired-end
+
+se = summarizeOverlaps(ebg.sub, bf, ignore.strand=TRUE, singleEnd=FALSE)
+head(assay(se), 1)
+```
+
+---
+
+##### Q1 size factors 
+What tissue has the highest size factor (as calculated by DESeq's estimateSizeFactors())?
+Copy the name exactly as it appears in your R session, only without quote marks.
+
+dds = estimateSizeFactors(dds)
+dds$cell.type[ which.max(sizeFactors(dds)) ]
+lymph.node
+
+##### Q2 Variance stabilize transform
+Run the varianceStabilizingTransformation() transformation (blind=FALSE) on the counts and save this to an object vsd. Make a PCA plot with this object using "cell.type" as the color of the points.
+What sample clusters with cerebellum?
+
+Give the name of the cell-type exactly as it appears in the plot legend. Be careful - the colors can be similar.
+
+vsd = varianceStabilizingTransformation(dds, blind=FALSE)
+plotPCA(vsd, intgroup="cell.type")
+mixed.brain
+
+
+
+For the last question, we will make a scatterplot matrix of some of the samples' transformed counts.
+
+rmeans <- rowMeans(assay(vsd)) # row mean of rlog-transformed data
+idx <- c(1,2,10,7,8,9,12) # pick some samples for visualization
+mat <- assay(vsd)[rmeans > 1,idx] # pull out a small matrix of rlog-transformed counts
+colnames(mat) <- vsd$cell.type[idx] # name the columns of matrix by cell type
+
+Now we could already call pairs() on this matrix, and it would make a matrix of scatterplots. But we will add an extra bit of code that will make a fast, subsetted scatter plot on top and add Pearson correlations below (the correlation code is directly copied from ?pairs):
+
+panel.sub <- function(x,y,...) points(cbind(x,y)[sample(length(x),1000),],...)
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)  {
+	usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+
+Now make our scatterplot matrix:
+
+pairs(mat, asp=1, col=rgb(0,0,0,.3), lower.panel=panel.cor, upper.panel=panel.sub)
+
+
+
+
+```{r}
+library(GenomicAlignments)
+se = summarizeOverlaps(ebg.sub, bf, ignore.strand=TRUE, singleEnd=FALSE)
+head(assay(se), 1)
+```
+192
+
+---
+
+
+
+### Statistics
+Data:
+Data that is binary, categorical, or ordinal.
+If data is large enough, can use CLT; else use association tests.
+
+The main question to ask, is what was seen significant compared to the big picture, and how is a glimpse of the big picture gained?  Hypothesis testing helps answer this question, quantifying what happens by chance(ie the null distribution).  If the distribution can be approximated asymptotically(n=large), via CLT, X-square, GLM, then a pvalue can be calculated, ie the probabiliy of seeing a deviation from what was expected.
+
+
+In the case of the Lady Tea Tasting, the question becomes: if she is just guessing, what is the chance of getting 3 out of the 4 right.  Here, the overall total, and the proportion of response in each category is know.  This follows a hypergeometric distribution, and the pvalue can be calculated directly.
+
+Next, would you see this again? (in situations where the proportions are not fixed; say the urn is filled with 100 balls and you select 8) Imagine we have 250 individuals, where some of them have a given disease and the rest do not. We observe that 20% of the individuals that are homozygous for the minor allele (aa) have the disease compared to 10% of the rest. Would we see this again if we picked another 250 individuals?
+Or think of Manhattan plots of millions of snps(y-axis) log_pval (Dx or no disease), and x-axis is chromosomes.
+
+Finally, if the computed statistic cant be computed, then how approximate 
+
+Signficance:
+Practical Significance is the change in behaviour based on increase in risk, or having AA/Aa vs aa might not change risk for disease- in those cases it is practically insignificant.  So despite increases.
+
+
+
+Other questions: how many different things are there, do we know all the values in the population.  Basically what is the distribution.
+
+Next, what about aspects of the distribution?
+If we have all the data(n), and have set number of answeres for each category(level); the number of ways they can be filled is constrained, the question is how big is big?
+
+If we resample the data, choose N individuals and then another N individuals, would you see the proportion in category again? Odds-ratio is appropriate way to look at the factor count table.
+
+Finally, what if we cant approximate whatever computed value is (ie diff mean/median), then how do you estimate the null distribution?
+
+
+
+- For Lady Tea Tasting, say she picked 3 out 4 correctly, do we believe she has a special ability? Hypothesis testing helps answer this question by quantifying what happens by chance.
+
+Can model as urn with 4G and 4R balls.  If you know how many of each, and have fixed values(responses, Pr=3|4); filling 2by2 is constrained, sum of row/cols fixed, hypergeometric.  Fisher's exact test will give you a pval and ci.
+
+FIXED: 
+experimental number of R/G balls
+number of answers for each category
+
+- For 250 individuals, where some of them have a given disease and the rest do not. We observe that 20% of the individuals that are homozygous for the minor allele (aa) have the disease compared to 10% of the rest. Would we see this again if we picked another 250 individuals?
+ OR for manhattan plot (y-axis is log_pvals, x-axis is chromosomes)
+y-axis of a Manhattan plot typically represents the negative of log (base 10) of the p-values obtained for association tests applied at millions of single nucleotide polymorphisms (SNP). The x-axis is typically organized by chromosome (chromosome 1 to 22, X, Y, etc.).
+
+
+
+First, the question is what is in your data, and what do you have access to.
+If dont know all values in the population
+So the problems are 
+
+Constrain Green/Red and number of responses : hypergeometric
+s
+But go beyond hypergeometric:
+
+Practical Significance is the change in behaviour based on increase in risk, or having AA/Aa vs aa might not change risk for disease- in those cases it is practically insignificant.  So despite increases.
+
+What if cant rely on CLT to do the 
+
+OR is a ratio of ratio, cant use CLT; require GLM (approx log odds ratio that approx to normal distribution).
+
+
+#### {.tabset}
+
+##### Notes: {.hidden .active}
+""
+
+##### MHT
+
+##### CLT
+- difference of sample means:
+- Because both are normal, 
+  - the difference is normal as well
+  - the variance (the standard deviation squared) is the sum of the two variances.
+
+- $X$ is a random variable
+  - 1. subtract (rv - constant) the mean of $X - a$ is $\mu-a$
+  - 2. multiplication mean and SD of $aX$ are $a \mu$ and $\mid a \mid \sigma$
+respectively. 
+  - *intuitive* subtract 10 grams from each mouse weight, average weight should also
+drop by that much. Similarly, if we change the units from grams to milligrams by multiplying by 1000, then the spread of the numbers becomes larger. 
+
+  - 3. mean(X-Y) = mean_x - mean_y
+  - 4. variance of sum == sum of variances
+  - *counterintuitive* X indpt Y, sign not matter
+  - 5. variance of the difference is also the sum of the variances
+  - 6. sum of normal variables is again normal
+  
+- difference between the sample averages $\bar{Y}-\bar{X}$, with $\bar{X}$ and $\bar{Y}$ the sample average for the two diets respectively approximated by a normal distribution centered at 0 (there is no difference) and with standard deviation $\sqrt{\sigma_X^2 +\sigma_Y^2}/\sqrt{N}$. 
+
+- approximation by normal distribution: know the proportion of the distribution under any value, compute pvals is easy
+  - only 5% of these values are larger than 2 (in absolute value):
+
+```{r}
+pnorm(-2) + (1 - pnorm(2))
+```
+
+
+---
+
+
+##### t-distribution
+- CLT relies on large sample refered to asymptotic results
+- if CLT not apply, there is another option that does not rely on asymptotic results. 
+- When the original population from which a random variable, say $Y$, is sampled is normally distributed with mean 0, then we can calculate the distribution of: 
+
+$$
+\sqrt{N} \frac{\bar{Y}}{s_Y}
+$$
+
+- this is the ratio of two random variables so it is not necessarily normal. 
+  - fact that the denominator can be small by chance increases the probability of observing large values
+  
+- qq_plot
+  - compares data (on the y-axis) against a theoretical distribution (on the x-axis)
+  
+- pvals: 
+  - How often does a normally distributed random variable exceed diff? 
+  - R has a built-in function, pnorm, to answer this specific question. 
+  - pnorm(a) returns the probability that a random variable following the standard normal distribution falls below a. 
+  - To obtain the probability that it is larger than a, we simply use 1-pnorm(a). 
+  - We want to know the probability of seeing something as extreme as diff: either smaller (more negative) than -abs(diff) or larger than abs(diff). We call these two regions “tails” and calculate their size:
+
+
+##### Confidence Intervals
+- effect size is observed diff (more important that stat sig, pval)
+  - effect size is divided by the mean of the control group and so expressed as a percent increase.
+- ci includes effect size and uncertainty
+- A confidence interval is a statistical way of reporting our finding, the sample average, in a way that explicitly summarizes the variability of our random variable
+- saying 95% of random intervals will fall on the true value (our definition above) is not the same as saying there is a 95% chance that the true value falls in our interval
+
+
+
+
+
+  
+
+
+##### Association Test
+[genomicsclass](http://genomicsclass.github.io/book/pages/association_tests.html)
+
+- Lady Tasting Tea: was milk or tea poured first into cup 
+  - if guessing, the question is what is the chance of get 3 or more correct ?
+  - choosing 4 balls out of urn with 4 green(correct) 4 red(incorrect) balls
+  - combinations 4c3:0.24 <-this is the pval
+  - this is fisher exact test (hypergeometric without replacement)
+  
+- 2by2 table
+  levels of factors
+  report Odds-Ratio
+```{r}
+tab <- matrix(c(3,1,1,3),2,2)
+rownames(tab)<-c("Poured Before","Poured After")
+colnames(tab)<-c("Guessed before","Guessed after")
+tab
+
+```
+  
+```{r}
+fisher.test(tab,alternative="greater")
+
+
+```
+
+
+#####Chi-Square
+  
+- SNPs, Manhattan Plot: represents the negative of log (base 10) of the p-values obtained for association tests applied at millions of single nucleotide polymorphisms (SNP  
+
+- MP:x-axis, chromosomes 1...23; y-axis neg_log_10(pvals_)
+- hypergeometric: number of green and red balls is experimentally fixed, number of answers given for each category is also fixed. Another way to say this is that the sum of the rows and the sum of the columns are fixed
+  -- constraints on how fill 2by2
+  -- permits use of hypergeometric
+  
+  -- Normally not the case: so use Chi-squared
+
+- ChiSquare
+  -- Chi-square test uses asymptotic result (similar to the CLT) 
+    related to the sums of independent binary outcomes. 
+    Using this approximation, we can compute the probability of seeing a deviation from the expected table as big as the one we saw. 
+  -- Expected Table
+    Under the null hypothesis, the group with 200 individuals and the group with 50 individuals were each randomly assigned the disease with the same probability. If this is the case, then the probability of disease is:
+   -- ODDS RATIO:
+    - not use directly
+     instead assume that there is no association between genotype and disease, and then compute what we expect to see in each cell of the table 
+```{r}
+disease=factor(c(rep(0,180),rep(1,20),rep(0,40),rep(1,10)),
+               labels=c("control","cases"))
+genotype=factor(c(rep("AA/Aa",200),rep("aa",50)),
+                levels=c("AA/Aa","aa"))
+p=mean(disease=="cases")
+expected <- rbind(c(1-p,p)*sum(genotype=="AA/Aa"),
+                  c(1-p,p)*sum(genotype=="aa"))
+dimnames(expected)<-dimnames(tab)
+expected
+chisq.test(tab)$p.value
+
+```
+
+- Reporting PVALS:
+  - over-reliance on pvals in gwas
+  - *practical significance* : 
+    -- if odds-ratio barely bigger than one, than not enough to change behavior based on small increase in risk
+    -- difference of having genotype AA/Aa or aa might not change an individual’s risk
+    -- not a 1:1 or:pval ; recalc pval but keep proportions identical
+    recalculate the p-value keeping all the proportions identical, but increasing the sample size by 10, which reduces the p-value substantially (as we saw with the t-test under the alternative hypothesis)
+    
+- Conficence INterval
+  -- OR is ratio of ratio, no simple way to use CLT
+  -- use GLM, which provide estimates of log-odds-ratio(asymptotically normal)
+  therefore form a confidence interval and then exponentiate to provide a confidence interval for the OR.
+    
+
+
+
+---
+
+
+
+
+
+
+##### Permutation Test
+- computed summary stat(diff of mean), but not have useful approx (CLT) => perm tests useful here
+- if randomly mix cases and control then null is true, assume distribution approx null distribution, 1000x
+
+- how many null-means are bigger than observed value? this proportion will be  pval of null
+
+- if there is real diff (null is false):
+  - some of the permutations will be unbalanced and explain the results
+  - null_created_by_perms larger tails than actual null_distrubution (ie perms result in conservative pvals)
+  - when have few samples cant do permutations
+
+- if hidden structure:
+  - tails are smaller, becuase permutations destroy the existing structure of orginal data
+
+---
+
+##### Exercise
+ N=10
+ set.seed(1)
+ nonsmokers <- sample(bwt.nonsmoke , N)
+ smokers <- sample(bwt.smoke , N)
+ obs <- mean(smokers) - mean(nonsmokers)
+
+The question is whether this observed difference is statistically significant. 
+We do not want to rely on the assumptions needed for the normal or t-distribution approximations to hold.
+We will reshuffle the data and recompute the mean. We can create one permuted sample with the following code:
+
+What is permutation pvalue for diff_median
+
+---
+
+### Differential Expression at Gene Level
+Use software that models the raw counts and takes into account normalizaton factors like size factor that adjusts for sequencing depth.
+
+(RNASeq)[file:///home/solver/RafaIzzary/book/genomicsclass.github.io/book/pages/rnaseq_gene_level.html
+
+#### {.tabset}
+
+##### Questions: {.hidden .active}
+""
+
+##### Modeling Raw Counts
+
+##### DE Q1
+What is the ENSEMBL ID of the gene with the smallest adjusted p-value in res?
+
+Report the full gene ID starting with "ENSG". The rownames of res give the Ensembl ID.
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+download.file("http://bowtie-bio.sourceforge.net/recount/ExpressionSets/wang_eset.RData", "wang_eset.RData")
+load("wang_eset.RData")
+```
+
+```{r}
+
+library(Biobase)
+
+count.matrix <- exprs(wang.eset)[,10:21]
+col.data <- pData(wang.eset)[10:21,]
+
+library(DESeq2)
+dds <- DESeqDataSetFromMatrix(count.matrix, col.data, design=~cell.type)
+
+#create new level set lfc ref level
+# if cerebellum or mixed.brain -> brain ; all others label other
+dds$type <- factor(ifelse(dds$cell.type %in% c("cerebellum","mixed.brain"),
+                          "brain", "other"))
+dds$type <- relevel(dds$type, "other")
+# reset the design
+design(dds) <- ~ type
+
+dds <- DESeq(dds)
+res <- results(dds)
+names(res) #6 cols
+rownames(res)
+table(res$padj<0.1)
+
+#plotMA default and lg fold-change of 10 == fold-change 1024
+mypar(2,1)
+plotMA(res, ylim=c(-4,4))
+plotMA(res, ylim=c(-10,10))
+
+
+#smallest pval
+res[which.min(res$pvalue),]
+
+idx<-rownames(res)[ which.min(res$padj) ]
+plotCounts(dds, idx, intgroup="type")
+```
+
+Find the gene with the smallest adjusted p-value in res. Use plotCounts() to make a plot of the normalized counts for this gene. If we use idx to denote the index (numeric or character) of the gene of interest, we can use the following code to create this plot.
+```{r}
+#plotCounts(dds, idx, intgroup="type")
+
+```
+
+
+---
+
+#####  DE Q2
+Call summary() on res2.
+How many genes with adjusted p-value less than 0.1 have a positive LFC?
+606
+```{r}
+res2.thr <- results(dds, lfcThreshold=2)
+plotMA(res2.thr, ylim=c(-10,10))
+summary(res2.thr)
+
+#OR
+
+table(res2.thr$padj < 0.1 & res2.thr$log2FoldChange > 0) 
+
+```
+
+In the summary table, we can see there are a number of genes which were filtered for having either low or outlier counts:
+
+The DESeq2 software automatically filters low count genes, and chooses a threshold by optimizing the number of genes with adjusted p-value < alpha, an argument in results(). These filtered genes will get a NA for the adjusted p-value. The reason for this low count filtering is that multiple test correction (covered in PH525.3x) produces adjusted p-values which are larger than the original p-value. The amount that the adjusted p-value is raised depends on the number of tests. If we can remove genes which have no power to find differences (genes with very small counts, where the differences are obscured by noise), we can increase our overall power giving us smaller adjusted p-values. A review of this filtering strategy is presented in Bourgon 2010 External link.
+DESeq2 also filters (or with more samples, replaces) genes with extreme outlier counts. These genes receive an NA for both p-value and adjusted p-value. This dataset has a large number of outlier counts, because we have combined a number of tissues in the "other" group, though these are not truly biological replicates. If a single tissue in "other" has a large count, but the others have 0, this gene was likely filtered out. An experiment with two groups of proper biological replicates would have much fewer outliers (although technical outliers can still occur).
+Both filters can be adjusted or turned off by the arguments listed in the summary() output.
+
+We mentioned in the first week that gene counts are proportional to gene expression, as well as sequencing depth, average transcript length, and other technical bias factors. In this analysis we accounted for sequencing depth changes across samples, and we assumed that the other factors cancelled out when calculating fold changes across samples. It is possible to account for these differences as well across samples, by using other software to estimate sample-specific bias parameters (e.g. the CQN or EDASeq package) and setting these normalizationFactors() before running DESeq().
+
+---
+
+##### DE Q3
+
+
+#####  DE II Q1
+Use org.Hs.eg.db to determine the gene symbol of the top gene in this list.
+What is the SYMBOL of the top gene?
+
+```{r}
+#Build a vector of the names of the top 20 genes by the test statistic (largest first). ***The test statistic is the LFC divided by its standard error, and uniquely determines the p-value.*** So this is the same as asking for the genes with the smallest p-value and positive LFC (so higher expression in brain).
+
+top <- rownames(res)[head(order(res$stat, decreasing=TRUE), 20)]
+head(top)
+
+library(org.Hs.eg.db)
+keytypes(org.Hs.eg.db)
+anno <- select(org.Hs.eg.db, keys=top,
+               columns=c("SYMBOL","GENENAME"), 
+               keytype="ENSEMBL")
+anno[match(top, anno$ENSEMBL),]
+#select(org.Hs.eg.db, keys=top, columns=c("SYMBOL","GENENAME"), keytype="ENSEMBL")
+```
+
+
+---
+
+#####  DE II Q2
+Use org.Hs.eg.db to determine the GENENAME of the top genes.
+What is the GENENAME of the top gene?
+synaptotagmin II
+
+You can use this link External link to search for more information about these genes by SYMBOL on the NCBI Gene resource.
+Try searching for our top gene identified above. What is the "Summary" information for this gene?
+
+https://www.ncbi.nlm.nih.gov/gene/?term=%22homo+sapiens%22%5BOrganism%5D+synaptotagmin+2
+
+Name/Gene ID	Description	Location	Aliases	MIM
+Select item 127833SYT2
+ID: 127833
+synaptotagmin 2 [Homo sapiens (human)]	Chromosome 1, NC_000001.11 (202590596..202710454, complement)	CMS7, CMS7A, CMS7B, MYSPC, SytII	600104
+
+---
+
+##### SVA Q1
+Which sample (the number in the plot) from experiment number 6 is closest to the samples from experiment number 4, according to these two surrogate variables?
+
+
+```{r}
+download.file("http://bowtie-bio.sourceforge.net/recount/ExpressionSets/bottomly_eset.RData", "bottomly_eset.RData")
+load("bottomly_eset.RData")
+library(Biobase)
+#build a DESeqDataSet from this object:
+count.matrix <- exprs(bottomly.eset)
+col.data <- pData(bottomly.eset) 
+library(DESeq2)
+dds <- DESeqDataSetFromMatrix(count.matrix, col.data, design=~strain)
+#The experiment.number and lane.number columns are numeric, so make sure to turn them into factors:
+dds$experiment.number <- factor(dds$experiment.number)
+dds$lane.number <- factor(dds$lane.number)
+#Estimate the size factors so we can get normalized counts later:
+dds <- estimateSizeFactors(dds)
+```
+
+EDA
+Run the varianceStabilizingTransformation() on the dds and then make a PCA plot with c("strain","experiment.number") as the intgroup to label.
+
+The strains have names "C57BL/6J" and "DBA/2J".
+
+The experiments are numbered 4, 6 and 7. We can see that both strain and experimental batch have an effect on the normalized, transformed counts.
+
+```{r}
+vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+plotPCA(vsd, intgroup=c("strain","experiment.number"))
+
+```
+
+***Because we know the experimental batches, we could just use DESeq() with ~ experiment.number + strain to look for strain specific differences controlling for batch.*** But suppose we were given this data without the batch information. We could use SVA to try to identify the hidden structure.
+
+Run SVA-seq
+Run SVA-seq to find two surrogate variables using the code shown in the previous video or corresponding Rmd file External link.
+https://github.com/genomicsclass/labs/blob/master/rnaseq/rnaseq_gene_level.Rmd
+http://genomicsclass.github.io/book/pages/rnaseq_gene_level.html
+
+Use a design of ~ strain for the full model "mod" and ~ 1 for the reduced model "mod0".
+
+```{r}
+library(sva)
+dat <- counts(dds, normalized=TRUE)
+idx <- rowMeans(dat) > 1
+dat <- dat[idx,]
+#full model
+mod <- model.matrix(~ strain, colData(dds))
+#reduced model
+mod0 <- model.matrix(~ 1, colData(dds))
+svseq <- svaseq(dat, mod, mod0, n.sv=2)
+```
+
+Did SVA-seq recover batch?
+Plot the surrogate variables and color by the true batches (remember, normally we wouldn't have this information if we needed to run SVA):
+```{r}
+plot(svseq$sv[,1], svseq$sv[,2], col=dds$experiment.number, pch=16)
+legend("bottom", levels(dds$experiment.number), pch=16, col=1:3)
+```
+
+#Did SVA-seq recover batch?
+#Plot the surrogate variables and color by the true batches (remember, normally we wouldn't have this information if we needed to run SVA):
+```{r}
+plot(svseq$sv[,1], svseq$sv[,2], col=dds$experiment.number, pch=16)
+legend("bottom", levels(dds$experiment.number), pch=16, col=1:3)
+#Now add numbers to each sample:
+
+text(svseq$sv[,1], svseq$sv[,2], 1:ncol(dds), pos=1)
+```
+
+---
+
+#### fast psuedo aligners
+a few minutes to quantify abundances for each RNA-seq sample, and only a few Gb of RAM. This is a very attractive option for RNA-seq analysis, because alignment is an extra step in the process (STAR is very fast but still takes time), alignment results in large alignment files (BAM files, multiple Gb each), and then anyway, we require an extra step to count the alignments to the genes for each sample (taking ~10-30 minutes per sample for human RNA-seq).
+
+Sailfish: http://www.ncbi.nlm.nih.gov/pubmed/24752080
+kallisto: https://pubmed.ncbi.nlm.nih.gov/27043002/ (arXiv preprint)
+Salmon: https://pubmed.ncbi.nlm.nih.gov/28263959/ (bioRxiv preprint)
+
+(i) this approach corrects for potential changes in gene length across samples (e.g. from differential isoform usage, see [1]), (ii) these tools are substantially faster and require less memory and disk usage compared to alignment-based methods that require creation and storage of BAM files, and then counting, and (iii) it is possible to avoid discarding those fragments that can align to multiple genes with homologous sequence, thus increasing sensitivity (see [2]).
+
+[1] Trapnell, et al, "Differential analysis of gene regulation at transcript resolution with RNA-seq" 2012 http://www.nature.com/nbt/journal/v31/n1/abs/nbt.2450.html
+
+[2] Robert and Watson, "Errors in RNA-Seq quantification affect genes of relevance to human disease", 2015 https://genomebiology.biomedcentral.com/articles/10.1186/s13059-015-0734-x
+
+---
+
+Differential analyses for RNA-seq: transcript-level estimates improve gene-level inferences, Charlotte Soneson, Michael I. Love, Mark D. Robinson
+http://f1000research.com/articles/4-1521/v1
+
+The Bioconductor software for importing the abundances from these tools, converting into gene-level counts is called "tximport" and can be found below. This package has a vignette which demonstrates both how to import files and how to hand off the count matrices to edgeR, DESeq2, or limma-voom. All the DESeq2 analysis code that was shown in the previous units would be exactly the same using the tximport pipeline, except for the read counting step, which would be skipped.
+
+https://bioconductor.org/packages/tximport
+
+Some advantages of using these tools, then tximport to create gene-level count matrices are: (i) this approach corrects for potential changes in gene length across samples (e.g. from differential isoform usage, see [1]), (ii) these tools are substantially faster and require less memory and disk usage compared to alignment-based methods that require creation and storage of BAM files, and then counting, and (iii) it is possible to avoid discarding those fragments that can align to multiple genes with homologous sequence, thus increasing sensitivity (see [2]).
+
+[1] Trapnell, et al, "Differential analysis of gene regulation at transcript resolution with RNA-seq" 2012 http://www.nature.com/nbt/journal/v31/n1/abs/nbt.2450.html
+
+[2] Robert and Watson, "Errors in RNA-Seq quantification affect genes of relevance to human disease", 2015 https://genomebiology.biomedcentral.com/articles/10.1186/s13059-015-0734-x
+
+
+---
+
+
+### References
+#### 1. R
+- [hadley](http://adv-r.had.co.nz/Data-structures.html)
+- [md](https://kbroman.org/knitr_knutshell/pages/Rmarkdown.html)
+- [littlebookofr](https://a-little-book-of-r-for-bioinformatics.readthedocs.io/en/latest/src/chapter5.html)
+#### 2. RNASeq
+- [RNA-seq](http://rnaseq.uoregon.edu/)
+- [UCSC Genome Browser faq](https://genome.ucsc.edu/goldenPath/help/hgTracksHelp.html#FineTuning)
+- [empirical bayes isoform](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2666817/)
+- [cufflinks](https://academic.oup.com/bioinformatics/article/25/8/1026/324948)
+
+#### 3. Alignment
+- [Seq Read Archive, airway study](https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?study=SRP033351)
+- [asthma paper](https://www.ncbi.nlm.nih.gov/pubmed/24926665)
+- [asm data](http://www.bioconductor.org/packages/release/data/experiment/vignettes/airway/inst/doc/airway.html)
+- [embl-ebi](https://www.ebi.ac.uk/ena)
+- [sequence read archive](https://www.ncbi.nlm.nih.gov/sra/)
+- [FASTQC](http://www.bioinformatics.babraham.ac.uk/projects/fastqc/)
+- [FLASH](http://ccb.jhu.edu/software/FLASH/)
+- [STAR](https://github.com/alexdobin/STAR)
+- [Picard SAM flags](http://broadinstitute.github.io/picard/explain-flags.html)
+
+#### 4. Normalization
+- [gene-level](http://genomicsclass.github.io/book/pages/rnaseq_gene_level.html)
+

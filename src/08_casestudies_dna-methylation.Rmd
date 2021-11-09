@@ -1,0 +1,632 @@
+---
+title: "casestudies-dna-methylation.Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
+```
+
+```{r}
+library(BSgenome.Hsapiens.UCSC.hg19)
+chr22 <- Hsapiens[["chr22"]]
+s <- subseq(chr22,start=23456789,width=1000)
+print( as.character(s) )
+```
+```{r}
+#What is the GC-content (the proportion of bases that are either a "G" or a "C") of s (give answer as a proportion between 0 and 1)?
+letterFrequency(s,letters="GC",as.prob=TRUE)
+letterFrequency(s,letters="GC") / length(s)
+```
+```{r}
+#How many CpGs (a "C" followed directly by a "G") are in s (as defined in the previous question)?
+countPattern("CG",s)
+
+```
+```{r}
+#How many GpCs (a "G" followed directly by a "C") are in s (as defined in the previous question)?
+countPattern("GC",s)
+```
+
+```{r}
+#BiocManager::install("AnnotationHub",force=TRUE)
+library(AnnotationHub)
+ah <- AnnotationHub()
+head(ah)
+ah <- subset(ah,ah$genome=="hg19")
+query(ah,"genes")
+
+```
+```{r}
+#What is the record ID used by AnnotationHub for hg19 CpG Islands?
+query(ah,"CpG")
+
+```
+
+```{r}
+# What is the class of the object cgi (hint: use class function)?
+cgi_id <- query(ah,"CpG")
+cgi_id[1]
+cgi_id<-'AH5086'
+cgi <- ah[[cgi_id]]
+
+class(cgi)
+?class()  
+```
+
+```{r}
+#How many CpG islands are represented in the object cgi defined in the previous question?
+length(cgi$name)
+
+```
+```{r}
+#4
+#We can extract the sequence of each CpG Island with the following command:
+
+library(BSgenome.Hsapiens.UCSC.hg19)
+cgiseq <- getSeq(Hsapiens, cgi)
+head(cgiseq)
+```
+```{r}
+#Note that we must verify the same genome builds are being used here:
+genome(cgi)[1:24]
+genome(Hsapiens)[1:24]
+```
+
+```{r}
+#We will use these sequences to determine the observed to expected ratios at CpG Islands as described in the video.
+
+#Compute the proportion of Cs for each island and report the median of these proportions.
+#Hint: use the letterFrequency() function.
+lf_c<-letterFrequency(cgiseq,'C',as.prob = TRUE)
+head(lf_c)
+```
+```{r}
+median(lf_c)
+```
+```{r}
+# Proportion of G's:
+
+median( letterFrequency(cgiseq,letters="G",as.prob = TRUE) )
+```
+
+```{r}
+#For each CpG island, we now have the proportion of Cs () and the proportion of Gs (). Using these values, we can compute the proportion of CpGs we expect to see by chance if all dinucleotides have the same probability of appearing. To a close approximation this expected proportion is simply .
+
+#The number of CpGs that we expect to see in a genomic interval of size  is then . Once we have this expectation we can compute the observed to expected ratio.
+
+#Compute the expected number of CpGs in each CpG island using the formula. For each island divide the observed number of CpGs by the expected number of CpGs.
+
+#Report the median of these observed to expected ratios
+#Hint: use the vcountPattern() function to get the number of CpGs in each island.
+
+# expected = L_range * pc * pg
+#cgiseq[28691]
+pc = letterFrequency(cgiseq,"C",as.prob = TRUE)
+pg = letterFrequency(cgiseq,"G",as.prob = TRUE)
+L=width(cgiseq)
+#?DNAStringSet
+
+expected = pc * pg * L
+observed = vcountPattern("CG",cgiseq) 
+X2 = observed / expected 
+h<-data.frame(observed,expected,X2)
+head(h)
+hist(log2(X2))
+#median(X2) #0.8316008
+
+#res=alphabetFrequency(cgiseq)
+#head(res)
+#head(res[,"C"])
+#rowSums(res[1]['A'])
+```
+```{r}
+#7. repeat for GC
+observeda = vcountPattern("GC",cgiseq)
+head(observeda)
+X2a = observeda / expected
+median(X2a) #1.016737
+
+ha<-data.frame(observeda,expected,X2a)
+head(ha)
+#compare histograms
+boxplot(list(X2,X2a))
+```
+```{r}
+
+#CpG observed:expected low, less than 1. However, for the rest of the genome, the observed to expected ratio is substantially smaller. To look at regions that are not islands let's shift the islands we have by 20,000 nucleotides.
+
+#To avoid problems with short sequences, we will restrict our analysis to the mapped chromosomes:
+
+chr2use <- seqlevels(cgi)[1:24]
+index = which( seqnames(cgi) %in% chr2use)
+  
+#Define the non-CpG islands by shifting the known ones by 20,000 nucleotides.
+    
+noncgi <- shift(cgi[index],20000)
+  
+#Some of these regions contain repeats or are unmapped so we remove regions that have 0 Cs or 0 Gs:
+    
+library(BSgenome.Hsapiens.UCSC.hg19)
+noncgiseq <- getSeq(Hsapiens,noncgi)
+
+nullres <- alphabetFrequency(noncgiseq)
+keepIndex <- nullres[,"G"]>0 &  nullres[,"C"]>0 & nullres[,"N"]==0
+nullres <- nullres[keepIndex,]
+noncgiseq <- noncgiseq[keepIndex]
+
+#Use nullres and noncgiseq defined above to compute the expected number of CpGs we should see in each of the regions. Report the median observed to expected ratio for these regions.
+
+pc = nullres[,'C']/rowSums(nullres)
+pg = nullres[,'G']/rowSums(nullres)
+L= rowSums(nullres)
+expected = pc * pg * L
+observed = vcountPattern("CG",noncgiseq)
+oe = observed/expected
+median(oe)
+boxplot(list(X2,X2a,oe))
+
+```
+## Diff Meth Regions
+```{r}
+#install_github("genomicsclass/coloncancermeth")
+#Now we can load the library as well as the needed data objects:
+
+library(coloncancermeth)
+data(coloncancermeth)
+dim(meth)
+dim(pd)
+length(gr)
+print(gr)
+
+```
+
+```{r}
+#q1 From dim(pd) we can see that there are a total of 26 samples.
+
+#How many are cancer samples?
+which(pd$Status == "cancer")
+length(which(pd$Status == "cancer")) 
+#17
+# better way table -> count values
+table(pd$Status)
+
+#Which column of the meth matrix is a cancer sample and has BCR patient barcode "TCGA-A6-4107"?
+# matrix col/ row select syntax :col [,2] ; row [2,]
+# to get the col-names:
+# identify colum with BCR barcode
+# //doesnt work : grep("barcode", vnames(pd), value = TRUE)
+
+which(pd$bcr_patient_barcode=="TCGA-A6-4107" & pd$Status =="cancer") #14
+length(meth[,14])
+```
+
+
+```{r}
+#q2
+# Finding Differentially Methylated Regions in R Assessment Q2
+# 1 point possible (graded)
+# Use the methylation profiles to compute a Euclidean distance between each sample:
+# 
+#     
+#d <- dist(t(meth) , method="euclidean")
+d <- dist(t(meth))
+length(d) #n*n-1 /2
+
+index = pd$Status%in%c('normal','cancer')
+group = factor(pd$Status[index])
+head(group)
+table(group)
+length(group)
+cmd = cmdscale(d)
+
+mypar()
+plot( cmd[,1], cmd[,2], bg=as.numeric(group),pch=21,
+     xlab="First dimension",ylab="Second dimension")
+legend("bottomleft",levels(group),col=seq(along=levels(group)),pch=15)
+
+#p=plot( c(cmd[,1]), c(cmd[,2]), xlab='PCA1', ylab='PCA2' )
+#print(p)
+# Now use the cmdscale() function to create an MDS plot External link that graphically shows approximate distances between the samples, using color to distinguish cancer and normal samples.
+# 
+# Which of the following best describes the MDS plot?
+# The DNA methylation profiles appear similar for cancer and normal since the MDS plot shows random scatter.
+# The MDS plot shows perfect separation between cancer and normal samples in both dimensions.
+# The MDS plot shows separation between cancer and normal samples, but only in the first dimension. The second dimension seems to be associated with a large variability within the cancers.
+# We can't compute distances because methylation data is binary.
+
+```
+
+
+```{r}
+#For each CpG compute p-values for the cancer versus normal comparison using the limma package:
+
+library(limma)
+X <- model.matrix(~pd$Status)
+fit <- lmFit(meth,X)
+eb <- eBayes(fit)
+pvals <- eb$p.value[,2]
+
+#Now use the qvalue() function in the qvalue package to obtain q-values.
+#BiocManager::install("qvalue")
+library(qvalue)
+res <- qvalue(pvals)
+qvals <- res$qvalues
+length(qvals)
+length(qvals[which(qvals<0.05) ])/length(qvals) #0.2373412
+plot(pvals,qvals)
+
+qvals = qvalue(pvals)$qvalue
+head(qvals)
+mean(qvals<=0.05) #0.2373412
+
+#What proportion of CpG sites have q-values smaller than 0.05?
+
+#To refresh your memory on q-values, read the end of the multiple testing section External link.
+
+```
+
+```{r}
+#Q4
+#Before high-throughput technologies were available, cancer epigenetics research focused on searching for CpG islands showings higher levels of methylation in cancer (hypermethylated). Let's explore the data at hand in this regard.
+
+#What proportion of the CpGs showing statistically significant differences (defined with q-values in the previous question) are, on average, higher in cancer compared to normal samples?
+qvals = qvalue(pvals)$qvalue
+head(qvals)
+index <- which(qvals<=0.05)
+diffs <- fit$coef[index,2]
+mean(diffs>0) #0.4106411
+
+
+mean(fit$coef[,2]>0) # WRONG 0.4560773
+lfc <- qvals[fit$coef[,2] >0]
+length(lfc)/length(qvals)
+```
+
+```{r}
+#q5 Now let's determine which of the differentially methylated CpGs are in CpG islands.
+#Let's redefine CpG islands as cgi using the code from a previous assessment:
+
+library(AnnotationHub)
+ah <- AnnotationHub()
+cgi <- ah[["AH5086"]]
+
+#What proportion of the differentially methylated CpGs are inside islands?
+cgiseq <- getSeq(Hsapiens, cgi)
+
+diffcgi <- gr[ which(qvals<=0.05)]
+length(diffcgi)
+mean(diffcgi%over%cgi)
+
+length(qvals[index])
+length(qvals)
+head(cgi)
+names(pt)
+qvals[index]%over%cgi
+```
+
+```{r}
+islands=gr[index]%over%cgi
+hypermethylated=fit$coef[index,2]>0
+prop.table( table(islands,hypermethylated) )
+#table(islands,hypermethylated)
+```
+
+```{r}
+#Q6
+library(bumphunter)
+X <- model.matrix(~pd$Status)
+chr <- as.character(seqnames(gr))
+res <- bumphunter(meth,X,chr=chr,pos=start(gr),cutoff=0.1)
+
+#What proportion of DMRs overlap a CpG island?
+#Hint: if a DMR overlaps an island, the distance to the closest island will be 0
+map = distanceToNearest(dmrs,cgi)
+d = mcols(map)$distance
+mean(d==0)
+
+#Q7
+#What proportion of DMRs are within 2000 basepairs from a CpG island, but do not overlap?
+map = distanceToNearest(dmrs,cgi)
+d = mcols(map)$distance
+mean(d>0 & d<=2000)
+
+```
+
+```{r}
+##SECTION 2
+path <- "/rstudio/raw2_idat/"    # use your own path
+list.files(path)
+targets <- read.csv(file.path(path,"targets.csv"),as.is=TRUE)
+names(targets)
+targets$Basename
+
+#q1 how many samples are cancer?
+table(targets$Status)
+
+```
+```{r}
+#q2 
+targets$Basename <- file.path(path,targets$Basename)
+library(minfi)
+rgset <- read.metharray(targets$Basename,verbose=TRUE)
+rownames(targets) <- sampleNames(rgset)
+targets <- as(targets, "DataFrame")
+pData(rgset) <- targets
+
+dim(getRed(rgset))
+dim(getGreen(rgset))
+
+mset <- preprocessIllumina(rgset)
+mset <- mapToGenome(mset)
+
+head(getBeta(mset,type="Illumina")) ##the argument type="Illumina" gives us default procedure
+head(granges(mset))
+
+#If we use the Illumina approach to estimating methylation values, what is the estimated level of methylation for the CpG at location 153807318 on chr4 for sample "5775041068_R04C01"?  #0.4721712
+
+grm<-granges(mset)
+row<-which(ranges(grm) =="153807318")
+mset[row,]
+col<-"5775041068_R04C01"
+head(mset[row,col])
+grm[ranges(grm)=="153807318"]
+getBeta(mset[row,col],type="Illumina")
+head(granges(mset))
+
+i <- which(seqnames(granges(mset))=="chr4" & start(granges(mset))==153807318)
+j <- which(rownames(pData(mset))=="5775041068_R04C01")
+getBeta(mset,type="Illumina")[i,j]
+```
+
+```{r}
+#Reading Raw 450K Array Data Assessment Q3
+library(bumphunter)
+class(mset) #GenomicMethylSet
+showMethods("bumphunter")
+
+# We need to convert mset to a GenomicRatioSet using the following command:
+grset <- ratioConvert(mset,what="beta",type="Illumina")
+class(grset) #GenomicRatioSet
+#head(mset)
+#help
+help("bumphunter,GenomicRatioSet-method")
+```
+
+```{r}
+#Q4 Run bumphunter() as determined in the previous assessment question.
+
+#What is the "area" of the first DMR listed in the DMR table returned by bumphunter()?
+#dmr between cancer and normal
+res2 <- bumphunter(grset, model.matrix(~pData(grset)$Status), cutoff=0.1)
+
+head(res2)
+```
+
+```{r}
+# DNA METHYLATION week2
+#TCGA 801MB
+library(minfi)
+#grset <- getGenomicRatioSetFromGEO("GSE32148")
+#save(grset,file="grset.rda")
+##then to load later
+#load("grset.rda")
+```
+
+```{r}
+library(minfi)
+
+```
+
+```{r}
+#Measuring Methylation from Sequencing Assessment
+library("BSgenome.Hsapiens.UCSC.hg19")
+chr22 <- Hsapiens[["chr22"]]
+tail(chr22)
+class(chr22)
+mode(chr22)
+str(chr22)
+length(chr22)
+head(getSeq(chr22))
+
+#q1 
+res=matchPattern("CCGG",chr22)
+length(res)
+
+#q2 Plot a histogram of the DNA fragment sizes after we cut at CCGG positions. #How would you describe this distribution?
+seg <- diff(start(res))
+head(seg)
+hist(log10(seg)) #,xlim = 50000)
+?diff
+cumsum(1:10)
+x<-cumsum(cumsum(1:10))
+x
+diff(x)
+diff(x,lag=2)
+diff(x,differences=3)
+
+diff(1:10,3,3)
+```
+```{r}
+#q3 A typical size to filter are DNA regions between 40 and 220 basepairs.
+#What proportion of the fragments created for chr22 are between 40 and 220 basepairs?
+mean(seg>40 & seg<220) #0.3254161
+
+#q4 If we try to sequence all of chromosome 22, we would need to sequence 51,304,566 bases. If instead we only sequence fragments of sizes between 40 and 220 basepairs, how many bases would we need to sequence?
+
+sum(seg[seg>40 & seg<220]) #2178722
+
+```
+
+```{r}
+path <- "/rstudio/GSE46644/colonCancerWGBS"
+targets <- read.table(file.path(path,"targets.txt"), header = TRUE, sep = "\t")
+targets
+str(targets)
+
+library("bsseq")
+## turn metadata into DataFrame w/ sample names as rownames
+targets <- DataFrame(targets, row.names = as.character(targets$Run))
+
+## specify path to files in same order as targets table
+covfiles <- file.path(path, paste0(rownames(targets), ".chr22.cov"))
+
+## read coverage files
+colonCancerWGBS <- read.bismark(files = covfiles, rmZeroCov = TRUE,
+                                colData = targets)
+
+str(colonCancerWGBS)
+# phenotypic information
+pData(colonCancerWGBS)
+pd<-pData(colonCancerWGBS)
+length(pd)
+sample(pd)
+# granges object
+gr<-granges(colonCancerWGBS)
+head(gr)
+sample(gr)
+length(gr)
+
+```
+
+```{r}
+#coverage, number of reads
+library(tidyverse)
+cov <- getCoverage(colonCancerWGBS,type = "Cov")
+m <- getCoverage(colonCancerWGBS,type = "M")
+
+#1. genomic positions (chromosome and location) for methylation sites
+#2. M (Methylation) values, the number of reads supporting methylation covering each site
+#3. Cov (Coverage) values, the total number of reads covering each site
+
+# q5 What proportion of the reported CpGs have some coverage in all sample?
+cov %>%
+  head() %>%
+  print()
+
+fun <- function(n) {
+  all(n>=c(1,1,1,1,1,1))
+}
+
+res<-apply(cov,1,fun)
+mean(res) #0.7743644
+
+#book solution
+#index=apply(cov>0,1,all)
+#mean(index)
+```
+
+```{r}
+#q6 Compute the total coverage (across all samples) for each CpG site. Plot it against location.
+
+#x <- cov %in% start(gr)
+sgr <- start(gr)
+x <- sgr[seq_along(sgr) %% 1000 == 0]
+y <-apply(cov,1,sum)
+ys <- y[seq_along(y) %% 1000 == 0]
+head(x)
+length(ys)
+length(x)
+plot(x,ys)
+
+```
+
+```{r}
+#q7
+#Assuming cov>0, which of the following pairs gives us: 
+#1) an estimate of methylation status at each CpG and 
+#2) a quantity proportional to the standard error of this estimate?
+
+#m and cov
+#m/cov and 1/sqrt(cov)
+#m/cov and sqrt(cov)
+#cov and m
+
+
+
+
+```
+
+
+start(gr)[xaxis] %>%
+  head()
+head(start(gr[xaxis]))
+length(xaxis)
+length(cov)
+head(cov)
+c5[xaxis]
+plot(xaxis,yaxis)
+
+length(cov)
+c5<-cov[1:5,]
+c5
+
+sum
+str(gr)
+cat(length(gr),'yo','\n')
+
+cov %>%
+  head() %>%
+  cat('\nlength gr:',length(gr),'\n', 
+      '\nlength cov:',length(cov),
+      print(.))
+
+
+```
+
+cc <- cov==all(c(1,1,1,1,1,1))
+length(cov)
+length(cc)
+head(cov)
+head(cc)
+tail(mc)
+ml<-length(m[cov==c(1,1,1,1,1,1)])
+cl<-length(cov)
+ml/cl
+
+?getCoverage
+head(m)
+head(cov)
+length(cov)
+?cbind
+mean(m==c(1,1,1,1,1,1))
+
+mean(cov==c(1,1,1,1,1,1)) #0.08652248
+
+length(which(cov==c(1,1,1,1,1,1)))
+length(cov)
+
+
+
+```
+
+```{r}
+sum(sl)-(4*length(sl)) #2103094
+
+
+
+offset<-length(sl)*4-4
+sum(sl)
+sum(sl) - offset #2103098
+head(sl)
+
+sum(seg)
+sum(seg>40 & seg<220) #18907
+
+sum(seg[seg>40 & seg<220]) #2178722
+
+s42 <- seg[seg>40 & seg<220]
+head(s42)
+swh <- which(seg>40 & seg<220)
+head(seg[swh])
+
+str(chr22)
+```
+
+```{r}
+session_info()
+```

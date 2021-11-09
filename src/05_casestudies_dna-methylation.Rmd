@@ -1,0 +1,39 @@
+## Q6
+#Finding Differentially Methylated Regions in R Assessment Q6
+#Now we will use the bumphunter package to separate the differentially methylated CpGs intro groups.
+
+    
+library(bumphunter)
+X <- model.matrix(~pd$Status)
+chr <- as.character(seqnames(gr))
+res <- bumphunter(meth,X,chr=chr,pos=start(gr),cutoff=0.1)
+
+  
+From here we get a table of regions:
+
+    
+head(res$table)
+
+  
+Note that the bumphunter() function has options to assess uncertainty, which are turned on through the B argument. However, these options make this function computationally intensive. We therefore skip this step here and, instead of filtering by statistical significance, filter by region size.
+
+    
+dmrs <- res$table[ res$table$L>=3, ]
+
+  
+Note that this table is not a GenomicRanges object, but we can turn it into one easily:
+
+    
+dmrs <- makeGRangesFromDataFrame(dmrs)
+
+  
+For the regions in dmrs, find the distance to the closest island. (Hint: use distanceToNearest().)
+
+What proportion of DMRs overlap a CpG island?
+Hint: if a DMR overlaps an island, the distance to the closest island will be 0.
+
+  unanswered  
+  
+
+
+

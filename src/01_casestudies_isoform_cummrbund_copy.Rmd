@@ -1,0 +1,129 @@
+---
+title: "6cs_isoform_cummerbund.Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+Differential isoform expression with Cufflinks/cummeRbund
+- http://genomicsclass.github.io/book/pages/rnaseq_isoform_cummerbund.html
+
+
+Traditional software for isoform-level abundance estimation and differential analysis
+Cufflinks External link
+RSEM External link and the differential analysis tool, EBSeq External link
+MISO External link
+eXpress External link
+MMSEQ External link
+rQuant External link
+BitSeq External link
+
+Fast, pseudo-alignment methods for isoform-level abundance and differential analysis
+Sailfish External link
+Salmon External link
+kallisto External link and the differential transcript package, sleuth External link
+
+
+
+
+```{r cummerbund results=FALSE, warning=FALSE}
+library(cummeRbund)
+myDir <- system.file("extdata", package="cummeRbund") 
+gtfFile <- system.file("extdata/chr1_snippet.gtf",package="cummeRbund")
+cuff <- readCufflinks(dir=myDir,gtfFile=gtfFile,genome="hg19",rebuild=TRUE)
+```
+
+```{r annotate}
+gene.features <- annotation(genes(cuff))
+head(gene.features)
+isoforms.per.gene <- gene.features[!duplicated(gene.features$isoform_id), c("gene_id","isoform_id")]
+isoforms.per.gene <- isoforms.per.gene[order(isoforms.per.gene$isoform_id),]
+head(isoforms.per.gene)
+```
+
+```{r}
+gene.tab <- table(isoforms.per.gene$gene_id)
+head(gene.tab)
+```
+
+```{r}
+#How many genes have only 1 isoform?
+nrow(gene.tab[ gene.tab == 1 ])
+```
+
+```{r}
+#fpkm per isoform
+isoform.fpkm <- fpkm(isoforms(cuff))
+head(isoform.fpkm)
+#table(isoform.fpkm$sample_name)
+
+```
+```{r}
+table(isoform.fpkm$sample_name)
+```
+
+
+```{r}
+# extract tables for ips hesc
+
+ips <- isoform.fpkm[isoform.fpkm$sample_name == "iPS",]
+hesc <- isoform.fpkm[isoform.fpkm$sample_name == "hESC",]
+head(ips)
+```       
+
+
+```{r}
+#check cols are equal
+stopifnot(all(ips$isoform_id == isoforms.per.gene$isoform_id))
+stopifnot(all(hesc$isoform_id == isoforms.per.gene$isoform_id))
+```
+
+
+```{r}
+#get isoform with max expression by sample
+ips.max <- sapply(split(ips$fpkm, isoforms.per.gene$gene_id), which.max)
+head(ips.max)
+```
+
+```{r}
+hesc.max <- sapply(split(hesc$fpkm, isoforms.per.gene$gene_id), which.max)
+head(hesc.max)
+```
+```{r}
+# how often are hesc.max ips.max the same isoform proportion (0,1)
+
+SPLIT <- split(isoforms.per.gene,isoforms.per.gene$gene_id)
+ips.isos <- mapply(function(x,idx) x$isoform_id[idx], SPLIT, ips.max)
+hesc.isos <- mapply(function(x,idx) x$isoform_id[idx], SPLIT, hesc.max)
+mean( hesc.isos == ips.isos )
+
+```
+```{r}
+# same but only genes with more than one isoform, which isoforms are max in both samples
+G1 <- gene.tab[ gene.tab > 1 ]
+idx <- isoforms.per.gene$gene_id %in% names(G1)
+IN <- isoforms.per.gene$gene_id[ idx ]
+
+SPLIT_ips = split(ips$fpkm[idx] , IN)
+APP_ips = sapply(SPLIT_ips, which.max)
+
+SPLIT_hesc = split(hesc$fpkm[idx], IN)
+APP_hesc= sapply(SPLIT_hesc,which.max)
+
+mean(APP_ips == APP_hesc)
+
+```
+  
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

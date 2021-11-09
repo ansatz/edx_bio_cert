@@ -1,0 +1,78 @@
+---
+title: "6-case-studies-DNAMETH-assesment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## paper
+[epigenetic mania](https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0132001&type=printable)
+
+##Downloading IDAT files and constructing the RGChannelSet
+Some GEO entries include the original IDAT files as supplementary data. Download the supplementary IDAT files for this paper from GEO (note that this may take time as the download is ~600 MB):
+
+```{r}
+library(GEOquery)
+getGEOSuppFiles("GSE68777")    # download supplementary files
+untar("GSE68777/GSE68777_RAW.tar", exdir = "GSE68777/idat")    # extract idat.gz files
+length(list.files("GSE68777/idat", pattern = "idat"))    # check that you have 80 files
+```
+
+```{r echo=FALSE}
+idatFiles = list.files("GSE68777/idat", pattern = "idat.gz$", full = TRUE) 
+sapply(idatFiles, gunzip, overwrite = TRUE)    # unzip idat files
+
+```
+
+## Acquiring pData from GEO
+To create the pData table for this RGChannelSet, download the pData from the GEO experiment, perform the wrangling operations shown, and bind it to rg_68777:
+
+(This will take a couple minutes as it requires a 95.7 MB download.)
+
+```{r}
+library(stringr)
+geo = getGEO("GSE68777")    # download the main GEO data
+pdat = pData(geo[[1]])    # extract the pData
+
+# format rownames to match rg_68777 sample names
+rownames(pdat) = paste(pdat$geo_accession, pdat$title, sep="_")
+
+# extract group and sex metadata
+pdat$group = as.factor(str_remove(pdat$characteristics_ch1.1, "^diagnosis: "))
+pdat$sex = as.factor(str_remove(pdat$characteristics_ch1.2, "^Sex: "))
+pdat = pdat[,c("group", "sex")]
+
+# make sure rows are in the same order as samples from the rg set
+pdat = pdat[sampleNames(rg_68777),]
+
+# add pData to rg_68777
+pData(rg_68777) = as(pdat, "DataFrame")
+
+
+
+```
+
+
+Note that you can access the matrix of counts with assay(rg_68777).
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
